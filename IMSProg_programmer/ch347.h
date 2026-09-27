@@ -35,7 +35,8 @@ extern "C" {
 #endif
 
 #define CH347_SPI_VID 0x1a86
-#define CH347_SPI_PID 0x55db
+#define CH347_SPI_PID 0x55db   /* CH347A */
+#define CH347_SPI_PID_F 0x55de /* CH347F */
 #define CH347_SPI_IF 2
 #define CH347_EPOUT (6 | LIBUSB_ENDPOINT_OUT)
 #define CH347_EPIN (6 | LIBUSB_ENDPOINT_IN)
@@ -127,7 +128,7 @@ struct ch347_priv {
     uint8_t tmpbuf[510];//tmpbuf[509];//tmpbuf[8192];  // old - 512
 };
 
-struct ch347_priv *ch347_open();
+struct ch347_priv *ch347_open(uint16_t pid);
 
 void ch347_close(struct ch347_priv *priv);
 
@@ -145,7 +146,7 @@ int ch347_spi_tx(struct ch347_priv *priv, const void *tx, uint32_t len);
 
 int ch347_spi_rx(struct ch347_priv *priv, void *rx, uint32_t len);
 
-bool ch347_spi_init(uint8_t ch_type, uint16_t busSpeed);
+bool ch347_spi_init(uint8_t ch_type, uint8_t pType, uint16_t busSpeed);
 
 void ch347_spi_shutdown();
 

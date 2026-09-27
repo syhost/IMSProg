@@ -711,4 +711,5 @@ void DialogNANDSr::setDeviceType(const uint8_t pType)
     programmerType = pType;
     if (programmerType < 2)  programmerName ="CH341A";
     if (programmerType == 2) programmerName ="CH347T";
+    if (programmerType == 5) programmerName ="CH347F";
 }

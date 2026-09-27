@@ -1740,6 +1740,11 @@
         <translation>CH347T v1.1</translation>
     </message>
     <message>
+        <location filename="../mainwindow.ui" line="1562"/>
+        <source>CH347F</source>
+        <translation>CH347F</translation>
+    </message>
+    <message>
         <location filename="../mainwindow.ui" line="1558"/>
         <source>FT232H v1.2</source>
         <translation>FT232H v1.2</translation>

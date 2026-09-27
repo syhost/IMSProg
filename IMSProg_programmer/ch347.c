@@ -281,7 +281,7 @@ int32_t ch347setSDAandSCLHighlevels()
 }
 
 
-struct ch347_priv *ch347_open() {
+struct ch347_priv *ch347_open(uint16_t pid) {
     struct ch347_priv *priv = calloc(1, sizeof(struct ch347_priv));
     int ret;
 
@@ -298,7 +298,10 @@ struct ch347_priv *ch347_open() {
 #if LIBUSBX_API_VERSION >= 0x01000106
     libusb_set_option(priv->ctx, LIBUSB_OPTION_LOG_LEVEL, LIBUSB_LOG_LEVEL_INFO);
 #endif
-    priv->handle = libusb_open_device_with_vid_pid(priv->ctx, CH347_SPI_VID, CH347_SPI_PID);
+    /* CH347A (0x55db) and CH347F (0x55de) expose the SPI/I2C function on the
+     * same interface (IF 2, bulk EP 6 in/out) but use different PIDs, so the
+     * caller selects which variant this programmer entry should talk to. */
+    priv->handle = libusb_open_device_with_vid_pid(priv->ctx, CH347_SPI_VID, pid);
     if (!priv->handle) {
         perror("ch347: libusb: open");
         goto ERR_1;
@@ -335,9 +338,9 @@ void ch347_close(struct ch347_priv *priv) {
 }
 
 
-bool ch347_spi_init(uint8_t ch_type, uint16_t busSpeed) {
+bool ch347_spi_init(uint8_t ch_type, uint8_t pType, uint16_t busSpeed) {
     int ret;
-    priv = ch347_open();
+    priv = ch347_open((pType == 5) ? CH347_SPI_PID_F : CH347_SPI_PID);
     if (!priv)  return 1;
     if (ch_type != 1)
     {

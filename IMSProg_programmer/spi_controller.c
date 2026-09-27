@@ -53,10 +53,10 @@ int ProgDeviceInit( u8 deviceType, u8 chipType, u16 speed )
             ret = ch341a_init(chipType, speed);
             break;
         case 2: // CH347T v1.0
-            ret = ch347_spi_init(chipType, speed);
+            ret = ch347_spi_init(chipType, deviceType, speed);
             break;
         case 3: // CH347T v1.1
-            ret = ch347_spi_init(chipType, speed);
+            ret = ch347_spi_init(chipType, deviceType, speed);
             break;
         case 4: // FT232H v1.2
             ret = initFt232h();
@@ -65,6 +65,9 @@ int ProgDeviceInit( u8 deviceType, u8 chipType, u16 speed )
             if (chipType == 1) ft232hSetSpeedI2C(speed);
             if (chipType == 2) ft232hSetSpeedI2C(20);
             if (chipType  > 2) ft232hSetSpeedSPI(speed);
+            break;
+        case 5: // CH347F
+            ret = ch347_spi_init(chipType, deviceType, speed);
             break;
         default: //Unsupported types
             ret = -1;
@@ -96,6 +99,10 @@ int ProgDeviceClose( u8 deviceType )
         closeFt232h();
         ret = 0;
         break;
+    case 5: // CH347F
+        ch347_spi_shutdown();
+        ret = 0;
+        break;
     default: //Unsupported types
         ret = -1;
         break;
@@ -122,6 +129,9 @@ int getDeviceDescriptor(u8 *data, u8 deviceType)
     case 4: // FT232H v1.2
         ft232hGetDescriptor(data);
         break;
+    case 5: // CH347F
+        ch347GetDescriptor(data);
+        break;
     default: //Unsupported types
         return -1;
         break;
@@ -139,7 +149,7 @@ uint16_t getInterfaceSpeed(u8 deviceType, u8 chipType, u16 delay)
         {30000,   400,  1600,  5000,  5000,  5000, 60000}, // CH347T v1.0
         {15000,   400,  1600,  5000,  5000,  5000, 15000}, // CH347T v1.1
         {30000,   400,  1600,  5000,  5000,  5000, 30000}, // FT232H v1.2
-        {30000,   400,  1600,  5000,  5000,  5000, 30000}  // Reserved
+        {30000,   400,  1600,  5000,  5000,  5000, 60000}  // CH347F
     };
     if ((delay > 40) && (delay < 2100)) interfaceSpeed = defaultSpeed[deviceType][chipType] * delay / 1000;
     else interfaceSpeed = defaultSpeed[deviceType][chipType];
@@ -172,6 +182,9 @@ SPI_CONTROLLER_RTN_T SPI_CONTROLLER_Write_One_Byte( u8  data, u8 deviceType )
     case 4: // FT232H v1.2
         return (SPI_CONTROLLER_RTN_T)ft232WriteNbytes(&data, 1);
         break;
+    case 5: // CH347F
+        return (SPI_CONTROLLER_RTN_T)ch347_spi_tx(priv, &data, 1);
+        break;
     }
 }
 
@@ -193,6 +206,9 @@ SPI_CONTROLLER_RTN_T SPI_CONTROLLER_Chip_Select_High( u8 deviceType )
         break;
     case 4: // FT232H v1.2
         return (SPI_CONTROLLER_RTN_T)ft232h_CS_HI();
+        break;
+    case 5: // CH347F
+        return (SPI_CONTROLLER_RTN_T)ch347_set_cs(priv, 0, 1);
         break;
     }
 }
@@ -216,6 +232,9 @@ SPI_CONTROLLER_RTN_T SPI_CONTROLLER_Chip_Select_Low( u8 deviceType )
     case 4: // FT232H v1.2
         return (SPI_CONTROLLER_RTN_T)ft232h_CS_LO();
         break;
+    case 5: // CH347F
+        return (SPI_CONTROLLER_RTN_T)ch347_set_cs(priv, 0, 0);
+        break;
     }
 }
 
@@ -238,6 +257,9 @@ SPI_CONTROLLER_RTN_T SPI_CONTROLLER_Read_NByte( u8 *ptr_rtn_data, u32 len, SPI_C
     case 4: // FT232H v1.2
         return (SPI_CONTROLLER_RTN_T)ft232ReadNbytes(ptr_rtn_data, len);
         break;
+    case 5: // CH347F
+        return (SPI_CONTROLLER_RTN_T)ch347_spi_rx(priv, ptr_rtn_data, len);
+        break;
     }
 }
 
@@ -259,6 +281,9 @@ SPI_CONTROLLER_RTN_T SPI_CONTROLLER_Write_NByte( u8 *ptr_data, u32 len, SPI_CONT
         break;
     case 4: // FT232H v1.2
         return (SPI_CONTROLLER_RTN_T)ft232WriteNbytes(ptr_data, len);
+        break;
+    case 5: // CH347F
+        return (SPI_CONTROLLER_RTN_T)ch347_spi_tx(priv, ptr_data, len);
         break;
     }
 }
