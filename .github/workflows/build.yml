@@ -139,7 +139,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH=$(brew --prefix qt@6) \
             -DCMAKE_OSX_ARCHITECTURES="arm64" \
-            -DCMAKE_EXE_LINKER_FLAGS="-L/opt/homebrew/lib"
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="11.0" \
+            -DCMAKE_EXE_LINKER_FLAGS="-L/opt/homebrew/lib -L/usr/local/lib"
 
       - name: Build Application
         run: |
@@ -147,43 +148,104 @@ jobs:
 
       - name: Prepare Deployment Artifacts (Create Multi-App DMG)
         run: |
-          # 1. Create a clean staging layout for our final disk image
           mkdir -p dmg_staging
-          
-          # 2. Find and copy ALL three compiled .app bundles into the staging directory
-          echo "Locating and copying all Qt .app bundles..."
-          find build -name "IMSProg.app" -type d -exec cp -r {} dmg_staging/ \; || true
-          find build -name "IMSProg_editor.app" -type d -exec cp -r {} dmg_staging/ \; || true
-          find build -name "IMSProg_database_update.app" -type d -exec cp -r {} dmg_staging/ \; || true
 
-          # 3. Handle icon integration for each separate app bundle
-          # macOS requires standard Apple icon resources (.icns). If your source tree contains them, 
-          # we map them directly into each application's internal bundle layout.
-          echo "Integrating custom application icons..."
-          mkdir -p dmg_staging/IMSProg.app/Contents/Resources
-          mkdir -p dmg_staging/IMSProg_editor.app/Contents/Resources
-          mkdir -p dmg_staging/IMSProg_database_update.app/Contents/Resources
-          
-          # Copy your existing icons into the bundles (adjust paths if they are located elsewhere)
-          cp IMSProg_programmer/IMSProg64.png dmg_staging/IMSProg.app/Contents/Resources/ || true
-          cp IMSProg_editor/chipEdit64.png dmg_staging/IMSProg_editor.app/Contents/Resources/ || true
-          cp IMSProg_database_update/IMSProg_database_update.png dmg_staging/IMSProg_database_update.app/Contents/Resources/ || true
+          # Helper function to construct a macOS .app bundle around a binary
+          package_binary_to_app() {
+            local app_name="$1"
+            local binary_path="$2"
+            local png_path="$3"
+            local icon_name="$4"
 
-          # 4. Inject runtime environment overrides so deployment utilities find the dynamic libusb
+            echo "Building bundle for $app_name..."
+
+            # 1. Create standard macOS bundle layout
+            local bundle_dir="dmg_staging/${app_name}.app"
+            mkdir -p "${bundle_dir}/Contents/MacOS"
+            mkdir -p "${bundle_dir}/Contents/Resources"
+
+            # 2. Locate and copy the compiled binary
+            if [ -f "$binary_path" ]; then
+              cp "$binary_path" "${bundle_dir}/Contents/MacOS/${app_name}"
+              chmod +x "${bundle_dir}/Contents/MacOS/${app_name}"
+            else
+              echo "Error: Binary $binary_path not found!"
+              exit 1
+            fi
+
+            # 3. Create Info.plist
+            cat <<EOF > "${bundle_dir}/Contents/Info.plist"
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>${app_name}</string>
+              <key>CFBundleIconFile</key>
+              <string>${icon_name}.icns</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.imsprog.${app_name}</string>
+              <key>CFBundleName</key>
+              <string>${app_name}</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleSignature</key>
+              <string>????</string>
+          </dict>
+          </plist>
+          EOF
+
+            # 4. Generate .icns icon from PNG if provided
+            if [ -f "$png_path" ]; then
+              echo "Converting icon for $app_name..."
+              mkdir -p icon.iconset
+              sips -z 16 16     "$png_path" --out icon.iconset/icon_16x16.png
+              sips -z 32 32     "$png_path" --out icon.iconset/icon_16x16@2x.png
+              sips -z 32 32     "$png_path" --out icon.iconset/icon_32x32.png
+              sips -z 64 64     "$png_path" --out icon.iconset/icon_32x32@2x.png
+              sips -z 128 128   "$png_path" --out icon.iconset/icon_128x128.png
+              sips -z 256 256   "$png_path" --out icon.iconset/icon_128x128@2x.png
+              sips -z 256 256   "$png_path" --out icon.iconset/icon_256x256.png
+              sips -z 512 512   "$png_path" --out icon.iconset/icon_256x256@2x.png
+              sips -z 512 512   "$png_path" --out icon.iconset/icon_512x512.png
+              sips -z 1024 1024 "$png_path" --out icon.iconset/icon_512x512@2x.png
+
+              iconutil -c icns icon.iconset -o "${icon_name}.icns"
+              cp "${icon_name}.icns" "${bundle_dir}/Contents/Resources/"
+              rm -rf icon.iconset "${icon_name}.icns"
+            fi
+            # 5. Create directory /share/imsprog
+            mkdir -p "${bundle_dir}/Contents/share/imsprog"
+            # 6. Copy database file
+            [ -f "IMSProg_programmer/database/IMSProg.Dat" ] && cp "IMSProg_programmer/database/IMSProg.Dat" "${bundle_dir}/Contents/share/imsprog/"
+            # 7. Create and copy translation files
+            find build/ -name "*.qm" -exec cp {} "${bundle_dir}/Contents/share/imsprog/" \;
+          }
+
+          # Search for compiled binaries inside build folder and wrap them into .app bundles
+          IMSPROG_BIN=$(find build -name "IMSProg" -type f -not -path "*/.*" | head -n 1)
+          EDITOR_BIN=$(find build -name "IMSProg_editor" -type f -not -path "*/.*" | head -n 1)
+          DB_BIN=$(find build -name "IMSProg_database_update" -type f -not -path "*/.*" | head -n 1)
+
+          package_binary_to_app "IMSProg" "$IMSPROG_BIN" "IMSProg_programmer/img/IMSProg64.png" "IMSProg"
+          package_binary_to_app "IMSProg_editor" "$EDITOR_BIN" "IMSProg_editor/img/chipEdit64.png" "chipEdit"
+          package_binary_to_app "IMSProg_database_update" "$DB_BIN" "IMSProg_database_update/img/IMSProg_database_update.png" "IMSProg_db"
+
+          # Deploy Qt dependencies using macdeployqt
           export DYLD_LIBRARY_PATH="/opt/homebrew/lib:$DYLD_LIBRARY_PATH"
+          QT_BIN="$(brew --prefix qt@6)/bin"
 
-          # 5. Run macdeployqt on every application sequentially to bundle dependencies standalone
-          echo "Processing standalone dependencies with macdeployqt..."
-          $(brew --prefix qt@6)/bin/macdeployqt dmg_staging/IMSProg.app
-          $(brew --prefix qt@6)/bin/macdeployqt dmg_staging/IMSProg_editor.app
-          $(brew --prefix qt@6)/bin/macdeployqt dmg_staging/IMSProg_database_update.app
-
-          # 6. Create the final unified graphical DMG image containing all three configured apps
-          # We use the built-in hdiutil tool to generate a professional distribution image
-          echo "Compiling the final unified multi-app DMG file..."
-          hdiutil create -volname "IMSProg Programmer Suite" -srcfolder dmg_staging -ov -format UDZO imsprog-macos-arm64.dmg
+          $QT_BIN/macdeployqt dmg_staging/IMSProg.app -no-codesign
+          $QT_BIN/macdeployqt dmg_staging/IMSProg_editor.app -no-codesign
+          $QT_BIN/macdeployqt dmg_staging/IMSProg_database_update.app -no-codesign
           
-          # Move file to artifacts upload root
+          # Apply Ad-hoc signature (required for ARM64 macOS)
+          codesign --force --deep --sign - dmg_staging/IMSProg.app
+          codesign --force --deep --sign - dmg_staging/IMSProg_editor.app
+          codesign --force --deep --sign - dmg_staging/IMSProg_database_update.app
+
+          # Create final unified DMG disk image
+          hdiutil create -volname "IMSProg Programmer Suite" -srcfolder dmg_staging -ov -format UDZO imsprog-macos-arm64.dmg
           mkdir -p dist-dmg
           mv imsprog-macos-arm64.dmg dist-dmg/
 
